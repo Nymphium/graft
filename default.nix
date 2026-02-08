@@ -16,12 +16,11 @@ buildRustPackage {
           inherit basePath;
           extraRules = ''
             *.nix
+            *.md
             flake.lock
             .github
             examples
             tests
-            README.md
-            SUPPORTED_LANGUAGES.md
           '';
         };
     in

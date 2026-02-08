@@ -113,7 +113,7 @@ Graft supports a variety of languages. You can list them using:
 graft --list-languages
 ```
 
-For a full list of supported languages and extensions, see [SUPPORTED_LANGUAGES.md](SUPPORTED_LANGUAGES.md).
+For a full list of supported languages and extensions, see [SUPPORTED_LANGUAGES.md](/docs/SUPPORTED_LANGUAGES.md).
 
 ## 🧪 Development
 
