@@ -2,6 +2,7 @@ Supported Languages
 ===
 
 The following languages are currently supported by Graft:
+
 | Language | Extensions |
 |---|---|
 | Rust | `rust`, `rs` |

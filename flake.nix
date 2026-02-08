@@ -46,15 +46,18 @@
             pkgs.coreutils
           ];
           text = ''
-            cat <<'EOL' > docs/SUPPORTED_LANGUAGES.md
+            OUTPUT=docs/SUPPORTED_LANGUAGES.md
+
+            cat <<'EOL' > "$OUTPUT"
             Supported Languages
             ===
 
             The following languages are currently supported by Graft:
 
             EOL
-            graft --list-languages >> docs/SUPPORTED_LANGUAGES.md
-            echo "Generated docs/SUPPORTED_LANGUAGES.md"
+
+            graft --list-languages >> "$OUTPUT"
+            echo "Generated $OUTPUT"
           '';
         };
 

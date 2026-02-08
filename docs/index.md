@@ -28,7 +28,7 @@ graft src/main.rs \
 - [Installation](installation.md)
 - [Basic Usage](usage.md)
 - [Rule Files (TOML)](rules.md)
-- [Supported Languages](languages.md)
+- [Supported Languages](SUPPORTED_LANGUAGES.md)
 
 ## LICENSE
 MIT
