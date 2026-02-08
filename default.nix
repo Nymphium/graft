@@ -1,6 +1,40 @@
-(import
-  (fetchTarball {
-    url = "https://github.com/edolstra/flake-compat/archive/master.tar.gz";
-    sha256 = "17zv76a6p0i9i5s41shk134g615z508znid3c7y986161ay19mvw";
-  })
-  { src = ./.; }).defaultNix
+{
+  pkgs,
+  lib,
+  buildRustPackage,
+  gitignoreFilterWith,
+}:
+buildRustPackage {
+  pname = "graft";
+  version = "0.1.0";
+  src =
+    let
+      src = ./.;
+      filter =
+        basePath:
+        gitignoreFilterWith {
+          inherit basePath;
+          extraRules = ''
+            *.nix
+            flake.lock
+            .github
+            examples
+            tests
+            README.md
+            SUPPORTED_LANGUAGES.md
+          '';
+        };
+    in
+    lib.sources.cleanSourceWith {
+      filter = filter src;
+      inherit src;
+      name = "filtered-source";
+    };
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+  };
+  nativeBuildInputs = [ pkgs.pkg-config ];
+  buildInputs = [ pkgs.tree-sitter ];
+
+  doCheck = true;
+}

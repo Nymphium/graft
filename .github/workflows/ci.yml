@@ -51,6 +51,8 @@ jobs:
           nix fmt -- --ci
           cargo fmt --check
           actionlint
+          nix run '.#gen-supported-languages'
+          git diff --exit-code
 
       - name: Run tests
         run: |

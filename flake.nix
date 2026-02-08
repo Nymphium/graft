@@ -3,6 +3,10 @@
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/*";
     flake-utils.url = "github:numtide/flake-utils";
 
+    gitignore = {
+      url = "github:hercules-ci/gitignore.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -15,6 +19,7 @@
       nixpkgs,
       flake-utils,
       rust-overlay,
+      gitignore,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -29,17 +34,9 @@
           rustc = rustBin;
         };
 
-        graft = rustPlatform.buildRustPackage {
-          pname = "graft";
-          version = "0.1.0";
-          src = pkgs.lib.cleanSource ./.;
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-          };
-          nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = [ pkgs.tree-sitter ];
-
-          doCheck = true;
+        graft = pkgs.callPackage ./. {
+          inherit (rustPlatform) buildRustPackage;
+          inherit (gitignore.lib) gitignoreFilterWith;
         };
 
         gen-supported-languages = pkgs.writeShellApplication {
