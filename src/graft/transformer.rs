@@ -1,5 +1,5 @@
 use super::languages;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use regex::Regex;
 use serde::Serialize;
 use streaming_iterator::StreamingIterator;
@@ -128,6 +128,12 @@ impl Transformer {
         for m in matches {
             let replacement = self.expand_template(template_str, &m.captures, &template_regex)?;
 
+            // Validation: Check if replacement is a valid subset of the language
+            if let Err(e) = self.validate_template_subset(&replacement) {
+                eprintln!("Warning: Potential syntax error in expanded template: {}", e);
+                eprintln!("Expanded template: '{}'", replacement);
+            }
+
             // Calculate InputEdit
             let start_byte = m.start_byte;
             let old_end_byte = m.end_byte;
@@ -167,11 +173,13 @@ impl Transformer {
                 ));
             }
 
-            // Validation
+            // Validation: check if resulting source is valid
             if self.tree.root_node().has_error() {
+                let error_info = self.find_error_context();
                 let error_msg = format!(
-                    "Transformation resulted in syntax error after applying template at byte {}.",
-                    start_byte
+                    "Transformation resulted in syntax error after applying template at byte {}.\n{}",
+                    start_byte,
+                    error_info
                 );
                 return Err(anyhow!(error_msg));
             }
@@ -207,6 +215,60 @@ impl Transformer {
         });
 
         Ok(new_text.to_string())
+    }
+
+    /// Validates if the given fragment is a plausible subset of the target language.
+    /// This is a heuristic check to catch obvious syntax errors in the template.
+    fn validate_template_subset(&self, fragment: &str) -> Result<()> {
+        let mut parser = Parser::new();
+        parser.set_language(&self.language)?;
+        let tree = parser
+            .parse(fragment, None)
+            .ok_or_else(|| anyhow!("Failed to parse fragment"))?;
+
+        if tree.root_node().has_error() {
+            // If it has errors, it might still be a valid fragment (e.g. an expression at top level).
+            // But we can check if it's completely unparseable.
+            // For now, we just return an error if has_error() is true, and let the caller decide.
+            return Err(anyhow!("Fragment contains syntax errors according to tree-sitter."));
+        }
+        Ok(())
+    }
+
+    /// Finds context around the first syntax error in the current tree.
+    fn find_error_context(&self) -> String {
+        let mut error_node = None;
+
+        // DFS to find the first error node
+        let mut stack = vec![self.tree.root_node()];
+        while let Some(node) = stack.pop() {
+            if node.has_error() {
+                if node.is_error() || node.is_missing() {
+                    error_node = Some(node);
+                    break;
+                }
+                for i in (0..node.child_count()).rev() {
+                    stack.push(node.child(i as u32).unwrap());
+                }
+            }
+        }
+
+        if let Some(node) = error_node {
+            let start = node.start_byte();
+            let end = node.end_byte();
+            let line_start = self.source[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            let line_end = self.source[end..]
+                .find('\n')
+                .map(|i| i + end)
+                .unwrap_or(self.source.len());
+            let context = &self.source[line_start..line_end];
+            let offset = start - line_start;
+            let mut pointer = " ".repeat(offset);
+            pointer.push('^');
+            format!("Error at {}:{}:\n{}\n{}", node.start_position().row + 1, node.start_position().column + 1, context, pointer)
+        } else {
+            "No specific error location found.".to_string()
+        }
     }
 }
 
