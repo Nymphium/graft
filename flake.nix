@@ -51,6 +51,7 @@
             ===
 
             The following languages are currently supported by Graft:
+
             EOL
             graft --list-languages >> docs/SUPPORTED_LANGUAGES.md
             echo "Generated docs/SUPPORTED_LANGUAGES.md"

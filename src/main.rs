@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use glob::glob;
+use graft::Transformer;
 use graft::languages::LANGUAGES;
 use graft::rules::RuleFile;
-use graft::Transformer;
 use rayon::prelude::*;
 use serde::Serialize;
 use std::fs;

@@ -30,3 +30,5 @@ graft src/main.rs \
 - [Rule Files (TOML)](rules.md)
 - [Supported Languages](languages.md)
 
+## LICENSE
+MIT
