@@ -13,7 +13,7 @@ Perform safe, syntax-aware code transformations on source files. This skill enab
 
 `graft` is a CLI tool. Execute it via `run_shell_command`.
 
-Command: `graft [file] --query <query> --template <template> [--in-place] [--language <lang>]`
+Command: `graft [file] --query <query> --template <template> [--in-place] [--language <lang>] [--json]`
 
 ## How to Construct Queries
 

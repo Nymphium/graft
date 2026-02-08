@@ -1,5 +1,6 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use regex::Regex;
+use serde::Serialize;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Language, Parser, Point, Query, QueryCursor, Tree};
 
@@ -18,6 +19,32 @@ struct Match {
     start_position: Point,
     end_position: Point,
     captures: Vec<(String, String)>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct Modification {
+    pub start_byte: usize,
+    pub old_end_byte: usize,
+    pub new_end_byte: usize,
+    pub start_position: SerializablePoint,
+    pub old_end_position: SerializablePoint,
+    pub new_end_position: SerializablePoint,
+    pub replacement: String,
+}
+
+#[derive(Serialize, Debug, Clone, Copy)]
+pub struct SerializablePoint {
+    pub row: usize,
+    pub column: usize,
+}
+
+impl From<Point> for SerializablePoint {
+    fn from(p: Point) -> Self {
+        Self {
+            row: p.row,
+            column: p.column,
+        }
+    }
 }
 
 impl Transformer {
@@ -46,7 +73,7 @@ impl Transformer {
         &self.source
     }
 
-    pub fn apply(&mut self, query_str: &str, template_str: &str) -> Result<()> {
+    pub fn apply(&mut self, query_str: &str, template_str: &str) -> Result<Vec<Modification>> {
         let query = Query::new(&self.language, query_str)
             .with_context(|| format!("Failed to parse query: '{}'. Check if the query syntax matches the language grammar.", query_str))?;
 
@@ -87,8 +114,7 @@ impl Transformer {
         }
 
         if matches.is_empty() {
-            // Not an error, just no op
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         // 2. Sort matches by start byte descending (Bottom-Up)
@@ -96,6 +122,7 @@ impl Transformer {
 
         // 3. Apply edits
         let template_regex = Regex::new(r"\$\{(\w+)\}").unwrap();
+        let mut modifications = Vec::new();
 
         for m in matches {
             let replacement = self.expand_template(template_str, &m.captures, &template_regex)?;
@@ -141,21 +168,25 @@ impl Transformer {
 
             // Validation
             if self.tree.root_node().has_error() {
-                // We should probably print where the error is
                 let error_msg = format!(
                     "Transformation resulted in syntax error after applying template at byte {}.",
                     start_byte
                 );
-
-                // Try to find error node
-                // (This is a simple traversal, might be slow for huge trees, but acceptable for error reporting)
-                // Actually `has_error()` checks recursively.
-                // We won't traverse now, just report.
                 return Err(anyhow!(error_msg));
             }
+
+            modifications.push(Modification {
+                start_byte,
+                old_end_byte,
+                new_end_byte,
+                start_position: start_position.into(),
+                old_end_position: old_end_position.into(),
+                new_end_position: new_end_position.into(),
+                replacement,
+            });
         }
 
-        Ok(())
+        Ok(modifications)
     }
 
     fn expand_template(
@@ -169,7 +200,6 @@ impl Transformer {
             if let Some((_, text)) = captures.iter().find(|(n, _)| n == key) {
                 return text.clone();
             }
-            // Warn or error if capture not found? For now keep placeholder.
             format!("${{{}}}", key)
         });
 

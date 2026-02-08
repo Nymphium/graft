@@ -5,6 +5,7 @@ use graft::languages::LANGUAGES;
 use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
+use serde::Serialize;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -31,6 +32,19 @@ struct Cli {
     /// List supported languages and exit
     #[arg(long)]
     list_languages: bool,
+
+    /// Output modifications in JSON format
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Serialize)]
+struct JsonOutput {
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    modifications: Option<Vec<graft::Modification>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -62,47 +76,79 @@ fn main() -> Result<()> {
         Some(ref file_path) => {
             let source = fs::read_to_string(file_path)
                 .with_context(|| format!("Failed to read file: {:?}", file_path))?;
-            
+
             let lang = if let Some(l) = cli.language.clone() {
                 l
             } else {
                 file_path
                     .extension()
                     .and_then(|e| e.to_str())
-                    .ok_or_else(|| anyhow!("Could not detect file extension. Please specify language with --language"))?
+                    .ok_or_else(|| {
+                        anyhow!("Could not detect file extension. Please specify language with --language")
+                    })?
                     .to_string()
             };
             (source, lang)
         }
         None => {
             if cli.in_place {
-                return Err(anyhow!("--in-place is only supported when a file is provided"));
+                return Err(anyhow!(
+                    "--in-place is only supported when a file is provided"
+                ));
             }
-            let lang = cli.language.ok_or_else(|| anyhow!("--language is required when reading from stdin"))?;
-            
+            let lang = cli
+                .language
+                .ok_or_else(|| anyhow!("--language is required when reading from stdin"))?;
+
             let mut source = String::new();
-            io::stdin().read_to_string(&mut source)
+            io::stdin()
+                .read_to_string(&mut source)
                 .with_context(|| "Failed to read from stdin")?;
             (source, lang)
         }
     };
 
-    let mut transformer = Transformer::new(source, &lang_name)
-        .with_context(|| format!("Failed to initialize transformer for language '{}'", lang_name))?;
+    let mut transformer = Transformer::new(source, &lang_name).with_context(|| {
+        format!("Failed to initialize transformer for language '{}'", lang_name)
+    })?;
 
-    transformer
-        .apply(&query, &template)
-        .with_context(|| "Failed to apply transformation")?;
+    let result = transformer.apply(&query, &template);
 
-    let new_source = transformer.get_source();
-
-    if cli.in_place {
-        if let Some(file_path) = cli.file {
-            fs::write(&file_path, new_source)
-                .with_context(|| format!("Failed to write to file: {:?}", file_path))?;
+    match result {
+        Ok(modifications) => {
+            if cli.json {
+                let output = JsonOutput {
+                    status: "success".to_string(),
+                    modifications: Some(modifications),
+                    error: None,
+                };
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else {
+                let new_source = transformer.get_source();
+                if cli.in_place {
+                    if let Some(file_path) = cli.file {
+                        fs::write(&file_path, new_source).with_context(|| {
+                            format!("Failed to write to file: {:?}", file_path)
+                        })?;
+                    }
+                } else {
+                    print!("{}", new_source);
+                }
+            }
         }
-    } else {
-        print!("{}", new_source);
+        Err(e) => {
+            if cli.json {
+                let output = JsonOutput {
+                    status: "error".to_string(),
+                    modifications: None,
+                    error: Some(format!("{:?}", e)),
+                };
+                println!("{}", serde_json::to_string_pretty(&output)?);
+                std::process::exit(1);
+            } else {
+                return Err(e).context("Failed to apply transformation");
+            }
+        }
     }
 
     Ok(())

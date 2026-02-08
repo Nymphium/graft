@@ -9,7 +9,7 @@ fn test_binary_expression_rewrite() -> Result<()> {
     let query = "(binary_expression left: (_) @l operator: \"+\" right: (_) @r) @target";
     let template = "pow(${l}, ${r})";
 
-    transformer.apply(query, template)?;
+    let _ = transformer.apply(query, template)?;
     let output = transformer.get_source();
 
     assert_eq!(output, "fn main() { let x = pow(a, b); }");
@@ -24,7 +24,7 @@ fn test_function_call_rewrite() -> Result<()> {
     let query = "(call_expression function: (identifier) @name (#eq? @name \"foo\") arguments: (arguments) @args) @target";
     let template = "bar${args}";
 
-    transformer.apply(query, template)?;
+    let _ = transformer.apply(query, template)?;
     let output = transformer.get_source();
 
     assert_eq!(output, "fn main() { bar(1, 2); }");
@@ -39,7 +39,7 @@ fn test_insertion_before_statement() -> Result<()> {
     let query = "(expression_statement (call_expression function: (identifier) @name (#eq? @name \"process\"))) @target";
     let template = "log(\"start\");\n    process();";
 
-    transformer.apply(query, template)?;
+    let _ = transformer.apply(query, template)?;
     let output = transformer.get_source();
 
     // Note: indentation might be tricky, but we provided explicit spaces in template
@@ -55,7 +55,7 @@ fn test_multiple_occurrences_bottom_up() -> Result<()> {
     let query = "(binary_expression left: (_) @l operator: \"+\" right: (_) @r) @target";
     let template = "add(${l}, ${r})";
 
-    transformer.apply(query, template)?;
+    let _ = transformer.apply(query, template)?;
     let output = transformer.get_source();
 
     assert_eq!(
