@@ -113,11 +113,7 @@ Graft supports a variety of languages. You can list them using:
 graft --list-languages
 ```
 
-To regenerate the full list in [SUPPORTED_LANGUAGES.md](SUPPORTED_LANGUAGES.md), run:
-
-```bash
-nix run .#gen-supported-languages
-```
+For a full list of supported languages and extensions, see [SUPPORTED_LANGUAGES.md](SUPPORTED_LANGUAGES.md).
 
 ## 🧪 Development
 
