@@ -76,8 +76,7 @@ fn test_syntax_error_detection() {
     let result = transformer.apply(query, template);
     assert!(result.is_err());
     let err_msg = format!("{:?}", result.err().unwrap());
-    // Should be caught by template validation now
-    assert!(err_msg.contains("Invalid template syntax for language 'rust'"));
+    assert!(err_msg.contains("Transformation resulted in syntax error"));
     assert!(err_msg.contains("return 1 + ;"));
 }
 
@@ -93,8 +92,7 @@ fn test_multiline_error_context() {
     assert!(result.is_err());
     let err_msg = format!("{:?}", result.err().unwrap());
 
-    // Should be caught by template validation now
-    assert!(err_msg.contains("Invalid template syntax for language 'rust'"));
+    assert!(err_msg.contains("Transformation resulted in syntax error"));
     assert!(err_msg.contains("if ( {"));
 }
 
@@ -109,6 +107,6 @@ fn test_go_template_validation() {
     let result = transformer.apply(query, template);
     assert!(result.is_err());
     let err_msg = format!("{:?}", result.err().unwrap());
-    assert!(err_msg.contains("Invalid template syntax for language 'go'"));
-    assert!(err_msg.contains("add(${l} ${r})"));
+    assert!(err_msg.contains("Transformation resulted in syntax error"));
+    assert!(err_msg.contains("add(1 2)"));
 }

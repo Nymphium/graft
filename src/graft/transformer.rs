@@ -10,7 +10,6 @@ pub struct Transformer {
     parser: Parser,
     tree: Tree,
     language: Language,
-    lang_name: String,
 }
 
 struct Match {
@@ -68,7 +67,6 @@ impl Transformer {
             parser,
             tree,
             language,
-            lang_name: lang_name.to_string(),
         })
     }
 
@@ -76,57 +74,7 @@ impl Transformer {
         &self.source
     }
 
-    /// Validates the template syntax by replacing placeholders with dummy values and parsing.
-    pub fn validate_template(&self, template: &str) -> Result<()> {
-        let template_regex = Regex::new(r"\$\{(\w+)\}").unwrap();
-        // Replace ${label} with a simple identifier 'x' to test syntax
-        let dummy_expanded = template_regex.replace_all(template, "x");
-
-        let mut parser = Parser::new();
-        parser.set_language(&self.language)?;
-
-        // Strategy: try parsing as-is, and then with common wrappers for fragments.
-        let mut try_parse = |code: &str| -> bool {
-            if let Some(tree) = parser.parse(code, None) {
-                !tree.root_node().has_error()
-            } else {
-                false
-            }
-        };
-
-        // 1. Direct parse (works for items, and some languages allow top-level expressions)
-        if try_parse(&dummy_expanded) {
-            return Ok(());
-        }
-
-        // 2. Wrap in a block (covers many statements and expressions)
-        let wrapped_block = format!("{{\n{}\n}}", dummy_expanded);
-        if try_parse(&wrapped_block) {
-            return Ok(());
-        }
-
-        // 3. Wrap in a function (for languages like Go/Java that are strict)
-        let wrapped_fn = match self.lang_name.as_str() {
-            "go" | "golang" | "go.mod" => format!("package p; func _() {{\n{}\n}}", dummy_expanded),
-            "java" => format!("class C {{ void m() {{\n{}\n}} }}", dummy_expanded),
-            "rust" | "rs" => format!("fn _() {{\n{}\n}}", dummy_expanded),
-            _ => format!("func _() {{\n{}\n}}", dummy_expanded),
-        };
-        if try_parse(&wrapped_fn) {
-            return Ok(());
-        }
-
-        Err(anyhow!(
-            "Invalid template syntax for language '{}'.\nTemplate: '{}'\n(Note: Graft checked the template by replacing placeholders with dummy values and it failed to parse.)",
-            self.lang_name,
-            template
-        ))
-    }
-
     pub fn apply(&mut self, query_str: &str, template_str: &str) -> Result<Vec<Modification>> {
-        // Pre-validate template
-        self.validate_template(template_str)?;
-
         let query = Query::new(&self.language, query_str)
             .with_context(|| format!("Failed to parse query: '{}'. Check if the query syntax matches the language grammar.", query_str))?;
 
@@ -223,7 +171,7 @@ impl Transformer {
             if self.tree.root_node().has_error() {
                 let error_info = self.find_error_context();
                 let error_msg = format!(
-                    "Transformation resulted in syntax error after applying template at byte {}.\nவுகளை {}",
+                    "Transformation resulted in syntax error after applying template at byte {}.\n{}",
                     start_byte, error_info
                 );
                 return Err(anyhow!(error_msg));
@@ -290,7 +238,8 @@ impl Transformer {
             let mut pointer = " ".repeat(offset);
             pointer.push('^');
             format!(
-                "Error at {}:{}:\n{}\n{}",
+                "Error at {}:{}:\n{}
+{}",
                 node.start_position().row + 1,
                 node.start_position().column + 1,
                 context,
