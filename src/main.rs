@@ -65,10 +65,15 @@ fn main() -> Result<()> {
         .and_then(|e| e.to_str())
         .ok_or_else(|| anyhow!("Could not detect file extension"))?;
 
-    let mut transformer = Transformer::new(source, ext)
-        .with_context(|| format!("Failed to initialize transformer for file extension '.{}'", ext))?;
-        
-    transformer.apply(&query, &template)
+    let mut transformer = Transformer::new(source, ext).with_context(|| {
+        format!(
+            "Failed to initialize transformer for file extension '.{}'",
+            ext
+        )
+    })?;
+
+    transformer
+        .apply(&query, &template)
         .with_context(|| "Failed to apply transformation")?;
 
     let new_source = transformer.get_source();

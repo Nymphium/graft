@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use regex::Regex;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, Tree, Language};
+use tree_sitter::{InputEdit, Language, Parser, Point, Query, QueryCursor, Tree};
 
 pub mod languages;
 
@@ -28,7 +28,7 @@ impl Transformer {
         parser
             .set_language(&language)
             .context("Error loading language into parser")?;
-        
+
         // Ensure parsing works
         let tree = parser
             .parse(&source, None)
@@ -49,13 +49,14 @@ impl Transformer {
     pub fn apply(&mut self, query_str: &str, template_str: &str) -> Result<()> {
         let query = Query::new(&self.language, query_str)
             .with_context(|| format!("Failed to parse query: '{}'. Check if the query syntax matches the language grammar.", query_str))?;
-        
+
         let mut cursor = QueryCursor::new();
         let mut matches = Vec::new();
 
         // 1. Collect all matches first (extracting data to avoid borrow issues)
         {
-            let mut query_matches = cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
+            let mut query_matches =
+                cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
             while let Some(m) = query_matches.next() {
                 let target_idx = query.capture_index_for_name("target");
                 let target_node = if let Some(idx) = target_idx {
@@ -67,11 +68,13 @@ impl Transformer {
                 if let Some(node) = target_node {
                     let mut captures = Vec::new();
                     for capture in m.captures {
-                        let capture_name = query.capture_names()[capture.index as usize].to_string();
-                        let capture_text = capture.node.utf8_text(self.source.as_bytes())?.to_string();
+                        let capture_name =
+                            query.capture_names()[capture.index as usize].to_string();
+                        let capture_text =
+                            capture.node.utf8_text(self.source.as_bytes())?.to_string();
                         captures.push((capture_name, capture_text));
                     }
-                    
+
                     matches.push(Match {
                         start_byte: node.start_byte(),
                         end_byte: node.end_byte(),
@@ -84,8 +87,8 @@ impl Transformer {
         }
 
         if matches.is_empty() {
-             // Not an error, just no op
-             return Ok(());
+            // Not an error, just no op
+            return Ok(());
         }
 
         // 2. Sort matches by start byte descending (Bottom-Up)
@@ -104,7 +107,7 @@ impl Transformer {
 
             let start_position = m.start_position;
             let old_end_position = m.end_position;
-            
+
             // Calculate new end position
             let new_end_position = calculate_new_position(start_position, &replacement);
 
@@ -121,22 +124,29 @@ impl Transformer {
             self.tree.edit(&edit);
 
             // Apply to Source
-            self.source.replace_range(start_byte..old_end_byte, &replacement);
+            self.source
+                .replace_range(start_byte..old_end_byte, &replacement);
 
             // Incremental Parse
             let new_tree = self.parser.parse(&self.source, Some(&self.tree));
-            
+
             if let Some(t) = new_tree {
                 self.tree = t;
             } else {
-                return Err(anyhow!("Failed to re-parse after edit at byte {}. The parser state might be corrupted.", start_byte));
+                return Err(anyhow!(
+                    "Failed to re-parse after edit at byte {}. The parser state might be corrupted.",
+                    start_byte
+                ));
             }
 
             // Validation
             if self.tree.root_node().has_error() {
                 // We should probably print where the error is
-                let error_msg = format!("Transformation resulted in syntax error after applying template at byte {}.", start_byte);
-                
+                let error_msg = format!(
+                    "Transformation resulted in syntax error after applying template at byte {}.",
+                    start_byte
+                );
+
                 // Try to find error node
                 // (This is a simple traversal, might be slow for huge trees, but acceptable for error reporting)
                 // Actually `has_error()` checks recursively.
@@ -148,14 +158,19 @@ impl Transformer {
         Ok(())
     }
 
-    fn expand_template(&self, template: &str, captures: &[(String, String)], regex: &Regex) -> Result<String> {
+    fn expand_template(
+        &self,
+        template: &str,
+        captures: &[(String, String)],
+        regex: &Regex,
+    ) -> Result<String> {
         let new_text = regex.replace_all(template, |caps: &regex::Captures| {
             let key = &caps[1];
             if let Some((_, text)) = captures.iter().find(|(n, _)| n == key) {
                 return text.clone();
             }
             // Warn or error if capture not found? For now keep placeholder.
-            format!("${{{}}}", key) 
+            format!("${{{}}}", key)
         });
 
         Ok(new_text.to_string())
@@ -165,7 +180,7 @@ impl Transformer {
 fn calculate_new_position(start: Point, text: &str) -> Point {
     let mut row = start.row;
     let mut column = start.column;
-    
+
     for byte in text.bytes() {
         if byte == b'\n' {
             row += 1;

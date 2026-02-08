@@ -26,7 +26,7 @@
         formatter = pkgs.nixfmt-tree;
 
         devShells.default = pkgs.mkShellNoCC {
-          packages = rustPackages  ++ [
+          packages = rustPackages ++ [
             pkgs.actionlint
 
             pkgs.nil

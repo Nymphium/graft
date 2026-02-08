@@ -1,5 +1,5 @@
-use graft::Transformer;
 use anyhow::Result;
+use graft::Transformer;
 
 #[test]
 fn test_binary_expression_rewrite() -> Result<()> {
@@ -11,7 +11,7 @@ fn test_binary_expression_rewrite() -> Result<()> {
 
     transformer.apply(query, template)?;
     let output = transformer.get_source();
-    
+
     assert_eq!(output, "fn main() { let x = pow(a, b); }");
     Ok(())
 }
@@ -26,7 +26,7 @@ fn test_function_call_rewrite() -> Result<()> {
 
     transformer.apply(query, template)?;
     let output = transformer.get_source();
-    
+
     assert_eq!(output, "fn main() { bar(1, 2); }");
     Ok(())
 }
@@ -41,7 +41,7 @@ fn test_insertion_before_statement() -> Result<()> {
 
     transformer.apply(query, template)?;
     let output = transformer.get_source();
-    
+
     // Note: indentation might be tricky, but we provided explicit spaces in template
     assert_eq!(output, "fn main() { log(\"start\");\n    process(); }");
     Ok(())
@@ -57,8 +57,11 @@ fn test_multiple_occurrences_bottom_up() -> Result<()> {
 
     transformer.apply(query, template)?;
     let output = transformer.get_source();
-    
-    assert_eq!(output, "fn main() { let a = add(1, 2); let b = add(3, 4); }");
+
+    assert_eq!(
+        output,
+        "fn main() { let a = add(1, 2); let b = add(3, 4); }"
+    );
     Ok(())
 }
 
