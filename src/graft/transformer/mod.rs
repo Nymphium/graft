@@ -174,6 +174,7 @@ impl Transformer {
                     "Transformation resulted in syntax error after applying template at byte {}.\n{}",
                     start_byte, error_info
                 );
+
                 return Err(anyhow!(error_msg));
             }
 
@@ -238,8 +239,7 @@ impl Transformer {
             let mut pointer = " ".repeat(offset);
             pointer.push('^');
             format!(
-                "Error at {}:{}:\n{}
-{}",
+                "Error at {}:{}:\n{}\n{}",
                 node.start_position().row + 1,
                 node.start_position().column + 1,
                 context,
@@ -266,3 +266,6 @@ fn calculate_new_position(start: Point, text: &str) -> Point {
 
     Point { row, column }
 }
+
+#[cfg(test)]
+mod tests;
