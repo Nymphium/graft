@@ -29,13 +29,11 @@
 cargo install --path .
 ```
 
-<!-- not supported yet
 ### Using Nix
 
 ```bash
-nix build .
+nix run github:Nymphium/graft -- ...
 ```
--->
 
 ## 📖 Usage
 
@@ -115,7 +113,11 @@ Graft supports a variety of languages. You can list them using:
 graft --list-languages
 ```
 
-For a full list of supported languages and extensions, see [SUPPORTED_LANGUAGES.md](SUPPORTED_LANGUAGES.md).
+To regenerate the full list in [SUPPORTED_LANGUAGES.md](SUPPORTED_LANGUAGES.md), run:
+
+```bash
+nix run .#gen-supported-languages
+```
 
 ## 🧪 Development
 

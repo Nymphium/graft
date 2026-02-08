@@ -32,16 +32,32 @@
         graft = rustPlatform.buildRustPackage {
           pname = "graft";
           version = "0.1.0";
-          src = ./.;
+          src = pkgs.lib.cleanSource ./.;
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildInputs = [ pkgs.tree-sitter ];
 
-          # Tests might need specific environment or might be slow, 
-          # but let's keep them enabled by default.
           doCheck = true;
+        };
+
+        gen-supported-languages = pkgs.writeShellApplication {
+          name = "gen-supported-languages";
+          runtimeInputs = [
+            graft
+            pkgs.coreutils
+          ];
+          text = ''
+            cat <<'EOL' > SUPPORTED_LANGUAGES.md
+            Supported Languages
+            ===
+
+            The following languages are currently supported by Graft:
+            EOL
+            graft --list-languages >> SUPPORTED_LANGUAGES.md
+            echo "Generated SUPPORTED_LANGUAGES.md"
+          '';
         };
 
         rustPackages = [
@@ -52,8 +68,8 @@
         formatter = pkgs.nixfmt-tree;
 
         devShells.default = pkgs.mkShellNoCC {
+          inputsFrom = [ graft ];
           packages = rustPackages ++ [
-            pkgs.tree-sitter
             pkgs.actionlint
             pkgs.nil
             formatter
@@ -61,7 +77,10 @@
         };
       in
       {
-        packages.default = graft;
+        packages = {
+          default = graft;
+          inherit gen-supported-languages;
+        };
         legacyPackages = pkgs;
         inherit formatter devShells;
       }
