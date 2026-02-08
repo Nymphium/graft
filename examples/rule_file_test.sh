@@ -17,7 +17,7 @@ echo 'fn main() { let x = 1 + 2; let y = foo(x); }' > "$TEMP_DIR/target.rs"
 
 # Run graft with rule file
 ./target/debug/graft "$TEMP_DIR/target.rs" \
-    --rule-file rules.toml \
+    --rule-file ./examples/rules.toml \
     --in-place
 
 # Verify content
