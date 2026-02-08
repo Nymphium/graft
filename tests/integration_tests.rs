@@ -75,4 +75,27 @@ fn test_syntax_error_detection() {
 
     let result = transformer.apply(query, template);
     assert!(result.is_err());
+    let err_msg = format!("{:?}", result.err().unwrap());
+    assert!(err_msg.contains("Transformation resulted in syntax error"));
+    // The error is detected at the semicolon following the incomplete expression
+    assert!(err_msg.contains("Error at 1:22"));
+    assert!(err_msg.contains("^"));
+}
+
+#[test]
+fn test_multiline_error_context() {
+    let source = "fn main() {\n    let x = 1;\n    process();\n}";
+    let mut transformer = Transformer::new(source.to_string(), "rust").unwrap();
+
+    let query = "(expression_statement (call_expression function: (identifier) @n (#eq? @n \"process\"))) @target";
+    let template = "if ( {"; // Extremely broken syntax
+
+    let result = transformer.apply(query, template);
+    assert!(result.is_err());
+    let err_msg = format!("{:?}", result.err().unwrap());
+    
+    // In this case, tree-sitter-rust marks the whole function as ERROR
+    assert!(err_msg.contains("Error at 1:1"));
+    assert!(err_msg.contains("fn main() {"));
+    assert!(err_msg.contains("^"));
 }
