@@ -10,6 +10,7 @@
 *   **Template Expansion**: Supports flexible template strings with captured variables (e.g., `${name}`).
 *   **Multi-Language Support**: Supports a wide range of languages including Rust, JavaScript, Python, Go, and more.
 *   **Batch Queries**: Apply multiple transformations in a single pass (like `sed -e ... -e ...`).
+*   **Rule Files (TOML)**: Define reusable transformation rules in a persistent file with priority support.
 *   **Batch Processing**: Apply transformations across multiple files using glob patterns (e.g., `src/**/*.rs`).
 *   **Parallel Execution**: Processes multiple files concurrently for speed.
 *   **Structured Output**: Optional JSON output for integration with other tools and agents.
@@ -47,44 +48,45 @@ graft [files...] --query <query> --template <template> [--in-place]
 ### Arguments
 
 *   `[files...]`: Paths to source files or glob patterns (e.g., `src/**/*.rs`). Optional if reading from stdin (requires `--language`).
-*   `--query, -q`: Tree-sitter S-expression query to match nodes. Use `@target` to specify the node to replace.
-*   `--template, -t`: Replacement string. Use `${capture_name}` for captured nodes.
-*   `--in-place, -i`: Modify the file directly instead of printing to stdout. Only applicable when files are provided.
-*   `--language, -l`: Language of the source code. Required if reading from stdin or if extension detection fails.
+*   `--query, -q`: Tree-sitter S-expression query to match nodes. Can be specified multiple times.
+*   `--template, -t`: Replacement string. Can be specified multiple times.
+*   `--rule-file, -f`: Path to a TOML rule file.
+*   `--in-place, -i`: Modify the file directly instead of printing to stdout.
+*   `--language, -l`: Language of the source code.
 *   `--json`: Output modifications in JSON format.
 *   `--list-languages`: List all supported languages and their file extensions.
 
 ## 💡 Examples
 
-### 1. Rewrite Binary Expressions (`a + b` → `add(a, b)`)
+### 1. Rule File (TOML)
 
-Rewrite addition operations into function calls.
+Create a `rules.toml`:
+
+```toml
+[[rules]]
+name = "add-to-pow"
+language = "rust"
+priority = 10
+query = "(binary_expression left: (_) @l operator: \"+\" right: (_) @r) @target"
+template = "pow(${l}, ${r})"
+```
+
+Apply it:
+
+```bash
+graft src/main.rs --rule-file rules.toml --in-place
+```
+
+### 2. Batch Queries
+
+Chain multiple transformations in a single pass.
 
 ```bash
 graft src/main.rs \
-  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target'
-  --template 'add(${l}, ${r})'
-```
-
-### 2. Batch Processing
-
-Apply changes to all Rust files in the `src` directory.
-
-```bash
-graft "src/**/*.rs" \
-  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target'
+  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target' \
   --template 'add(${l}, ${r})' \
-  --in-place
-```
-
-### 3. Read from Stdin
-
-Pipe code directly into graft.
-
-```bash
-echo "fn main() { 1 + 2; }" | graft --language rust \
-  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target'
-  --template 'add(${l}, ${r})'
+  --query '(call_expression function: (identifier) @n (#eq? @n "foo") arguments: (arguments) @a) @target' \
+  --template 'bar${a}'
 ```
 
 ## 🤖 Agent Skills
@@ -129,6 +131,7 @@ cargo test
 
 *   `src/lib.rs`: Core transformation logic (`Transformer` struct).
 *   `src/languages.rs`: Language definitions and mappings.
+*   `src/rules.rs`: Rule file loading logic.
 *   `src/main.rs`: CLI entry point using `clap`.
 *   `tests/integration_tests.rs`: Integration tests for various transformation scenarios.
 

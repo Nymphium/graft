@@ -5,6 +5,7 @@ use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Language, Parser, Point, Query, QueryCursor, Tree};
 
 pub mod languages;
+pub mod rules;
 
 pub struct Transformer {
     source: String,

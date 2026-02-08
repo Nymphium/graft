@@ -44,11 +44,13 @@ This document outlines planned features and improvements for `graft`, specifical
     *   Support glob patterns: `graft "src/**/*.rs" ...`
     *   Parallel processing for speed.
 
-### 5. Query Library / Presets
-*   **Goal**: Reuse common refactoring patterns.
+### 5. Rule Files (TOML Templates) [DONE]
+*   **Goal**: Define complex transformations in a persistent file.
 *   **Details**:
-    *   Load queries from a file or a built-in library.
-    *   Example: `graft --preset rust/unwrap-to-expect ...`
+    *   Flag: `--rule-file` / `-f`
+    *   Format: TOML with `query`, `template`, `language`, and `priority` fields.
+    *   Higher priority rules are applied first.
+    *   Rules are filtered based on the target file's language.
 
 ## 🛠 Core Improvements
 

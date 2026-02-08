@@ -13,7 +13,7 @@ Perform safe, syntax-aware code transformations on source files. This skill enab
 
 `graft` is a CLI tool. Execute it via `run_shell_command`.
 
-Command: `graft [files...] --query <query> --template <template> [--in-place] [--language <lang>] [--json]`
+Command: `graft [files...] --query <query> --template <template> [--in-place] [--language <lang>] [--json] [--rule-file <file>]`
 
 ## How to Construct Queries
 
@@ -36,40 +36,35 @@ Command: `graft [files...] --query <query> --template <template> [--in-place] [-
 
 1.  **Draft**: Formulate the query and template based on the code structure.
 2.  **Dry Run**: Run `graft` **without** the `--in-place` (or `-i`) flag to verify the transformation in stdout.
-    *   `graft src/main.rs -q '...' -t '...'`
 3.  **Apply**: Run with `--in-place` (or `-i`) to modify the file(s).
-    *   `graft src/main.rs -q '...' -t '...' -i`
-4.  **Verify**: Run tests (`cargo test`) or checks (`cargo check`) to ensure valid code.
+4.  **Verify**: Run tests or checks to ensure valid code.
 
 ## Advanced Usage
 
-### Batch Queries (Multiple Rewrites)
-Perform multiple transformations in sequence.
-`graft file.rs -q 'query1' -t 'template1' -q 'query2' -t 'template2'`
+### Rule Files (TOML)
+Define multiple rules in a persistent file. Graft will automatically filter rules by language and apply them by priority (highest first).
+`graft src/ -f rules.toml -i`
+
+### Batch Queries
+Apply multiple transformations in sequence via CLI.
+`graft file.rs -q 'q1' -t 't1' -q 'q2' -t 't2'`
 
 ### Batch Processing
 Apply transformations to multiple files using glob patterns.
 `graft "src/**/*.rs" -q '...' -t '...' -i`
 
-### Reading from Stdin
-You can pipe code to `graft` by omitting the file argument and specifying the language.
-`echo "code" | graft --language <lang> -q '...' -t '...'`
-
-### JSON Output
-Get structured output for programmatic analysis.
-`graft file.rs -q '...' -t '...' --json`
-
 ## Examples
 
-### 1. Rename Function `old(x)` -> `new(x)`
+### 1. Rule File (`rules.toml`)
+```toml
+[[rules]]
+language = "rust"
+priority = 10
+query = "(binary_expression) @target"
+template = "add(${target})"
+```
+Command: `graft src/ -f rules.toml -i`
+
+### 2. Rename Function `old(x)` -> `new(x)`
 *   **Query**: `(call_expression function: (identifier) @n (#eq? @n "old") arguments: (arguments) @a) @target`
 *   **template**: `new${a}`
-
-### 2. Rewrite Binary Op `a + b` -> `add(a, b)`
-*   **Query**: `(binary_expression left: (_) @l operator: "+" right: (_) @r) @target`
-*   **template**: `add(${l}, ${r})`
-
-### 3. Insert Logging Before Call
-*   **Query**: `(expression_statement (call_expression function: (identifier) @n (#eq? @n "process"))) @target`
-*   **template**: `log("start");
-    process();`

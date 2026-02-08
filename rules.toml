@@ -1,0 +1,14 @@
+[[rules]]
+name = "add-to-pow"
+language = "rust"
+priority = 10
+query = "(binary_expression left: (_) @l operator: \"+\" right: (_) @r) @target"
+template = "pow(${l}, ${r})"
+
+[[rules]]
+name = "rename-foo"
+language = "rust"
+priority = 5
+query = "(call_expression function: (identifier) @n (#eq? @n \"foo\") arguments: (arguments) @a) @target"
+template = "bar${a}"
+

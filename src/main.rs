@@ -3,10 +3,12 @@ use clap::Parser;
 use glob::glob;
 use graft::Transformer;
 use graft::languages::LANGUAGES;
+use graft::rules::RuleFile;
 use rayon::prelude::*;
 use serde::Serialize;
 use std::fs;
 use std::io::{self, Read};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 #[derive(Parser)]
@@ -22,6 +24,10 @@ struct Cli {
     /// Replacement template (can be specified multiple times)
     #[arg(short, long)]
     template: Vec<String>,
+
+    /// Path to a TOML rule file
+    #[arg(short = 'f', long)]
+    rule_file: Option<PathBuf>,
 
     /// Edit file in-place (only applicable when files are provided)
     #[arg(short, long)]
@@ -49,6 +55,35 @@ struct JsonOutput {
     error: Option<String>,
 }
 
+struct ResolvedRule {
+    query: String,
+    template: String,
+    priority: i32,
+}
+
+fn language_matches(rule_lang: &str, target_lang: &str) -> bool {
+    if rule_lang == target_lang {
+        return true;
+    }
+    // Handle common aliases
+    let aliases = [
+        ("rust", "rs"),
+        ("javascript", "js"),
+        ("typescript", "ts"),
+        ("python", "py"),
+        ("markdown", "md"),
+        ("makefile", "make"),
+        ("makefile", "mk"),
+        ("dockerfile", "docker"),
+    ];
+    for (l1, l2) in aliases {
+        if (rule_lang == l1 && target_lang == l2) || (rule_lang == l2 && target_lang == l1) {
+            return true;
+        }
+    }
+    false
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -67,12 +102,19 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    if cli.query.is_empty() {
-        return Err(anyhow!("Missing argument: --query <QUERY>"));
+    let rule_file = if let Some(ref path) = cli.rule_file {
+        Some(RuleFile::load(path)?)
+    } else {
+        None
+    };
+
+    // If no rule file and no CLI query, error out (unless listing languages)
+    if rule_file.is_none() && cli.query.is_empty() {
+        return Err(anyhow!(
+            "Either --rule-file or --query/--template must be provided"
+        ));
     }
-    if cli.template.is_empty() {
-        return Err(anyhow!("Missing argument: --template <TEMPLATE>"));
-    }
+
     if cli.query.len() != cli.template.len() {
         return Err(anyhow!(
             "Mismatch between number of queries ({}) and templates ({})",
@@ -117,9 +159,37 @@ fn main() -> Result<()> {
             )
         })?;
 
-        let mut all_modifications = Vec::new();
+        // Resolve rules for this language
+        let mut rules = Vec::new();
+        // 1. From CLI (priority 0)
         for (q, t) in cli.query.iter().zip(cli.template.iter()) {
-            let mut mods = transformer.apply(q, t).with_context(|| "Failed to apply transformation")?;
+            rules.push(ResolvedRule {
+                query: q.clone(),
+                template: t.clone(),
+                priority: 0,
+            });
+        }
+        // 2. From RuleFile (matching language)
+        if let Some(ref rf) = rule_file {
+            for r in &rf.rules {
+                if language_matches(&r.language, &lang_name) {
+                    rules.push(ResolvedRule {
+                        query: r.query.clone(),
+                        template: r.template.clone(),
+                        priority: r.priority,
+                    });
+                }
+            }
+        }
+
+        // Sort by priority descending
+        rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+
+        let mut all_modifications = Vec::new();
+        for r in rules {
+            let mut mods = transformer
+                .apply(&r.query, &r.template)
+                .with_context(|| "Failed to apply transformation")?;
             all_modifications.append(&mut mods);
         }
 
@@ -137,7 +207,7 @@ fn main() -> Result<()> {
     }
 
     // Parallel processing for files
-    let all_modifications = Arc::new(Mutex::new(Vec::new()));
+    let all_modifications_shared = Arc::new(Mutex::new(Vec::new()));
     let has_error = Arc::new(Mutex::new(false));
 
     file_paths.par_iter().for_each(|file_path| {
@@ -157,14 +227,37 @@ fn main() -> Result<()> {
                 format!("Failed to initialize transformer for file {:?}", file_path)
             })?;
 
-            let mut file_modifications = Vec::new();
+            // Resolve rules for this file's language
+            let mut rules = Vec::new();
             for (q, t) in cli.query.iter().zip(cli.template.iter()) {
-                let mut mods = transformer.apply(q, t)?;
+                rules.push(ResolvedRule {
+                    query: q.clone(),
+                    template: t.clone(),
+                    priority: 0,
+                });
+            }
+            if let Some(ref rf) = rule_file {
+                for r in &rf.rules {
+                    // Match language name or extension
+                    if language_matches(&r.language, &lang_name) {
+                        rules.push(ResolvedRule {
+                            query: r.query.clone(),
+                            template: r.template.clone(),
+                            priority: r.priority,
+                        });
+                    }
+                }
+            }
+            rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+
+            let mut file_modifications = Vec::new();
+            for r in rules {
+                let mut mods = transformer.apply(&r.query, &r.template)?;
                 file_modifications.append(&mut mods);
             }
 
             if cli.json {
-                let mut mods = all_modifications.lock().unwrap();
+                let mut mods = all_modifications_shared.lock().unwrap();
                 for mut m in file_modifications {
                     m.filename = Some(file_path.to_string_lossy().to_string());
                     mods.push(m);
@@ -175,7 +268,6 @@ fn main() -> Result<()> {
                     fs::write(file_path, new_source)
                         .with_context(|| format!("Failed to write to file: {:?}", file_path))?;
                 } else {
-                    // Avoid interleaved output
                     let mut stdout = io::stdout().lock();
                     use std::io::Write;
                     write!(stdout, "{}", new_source).ok();
@@ -193,7 +285,7 @@ fn main() -> Result<()> {
 
     if cli.json {
         let error_occurred = *has_error.lock().unwrap();
-        let modifications = all_modifications.lock().unwrap().clone();
+        let modifications = all_modifications_shared.lock().unwrap().clone();
 
         let output = JsonOutput {
             status: if error_occurred {
