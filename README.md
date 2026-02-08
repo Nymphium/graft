@@ -9,6 +9,7 @@
 *   **Bottom-Up Processing**: Preserves offset integrity for multiple replacements in a single file.
 *   **Template Expansion**: Supports flexible template strings with captured variables (e.g., `${name}`).
 *   **Multi-Language Support**: Supports a wide range of languages including Rust, JavaScript, Python, Go, and more.
+*   **Batch Queries**: Apply multiple transformations in a single pass (like `sed -e ... -e ...`).
 *   **Batch Processing**: Apply transformations across multiple files using glob patterns (e.g., `src/**/*.rs`).
 *   **Parallel Execution**: Processes multiple files concurrently for speed.
 *   **Structured Output**: Optional JSON output for integration with other tools and agents.
@@ -24,7 +25,7 @@
 ### Using Cargo
 
 ```bash
-car go install --path .
+cargo install --path .
 ```
 
 <!-- not supported yet

@@ -43,6 +43,10 @@ Command: `graft [files...] --query <query> --template <template> [--in-place] [-
 
 ## Advanced Usage
 
+### Batch Queries (Multiple Rewrites)
+Perform multiple transformations in sequence.
+`graft file.rs -q 'query1' -t 'template1' -q 'query2' -t 'template2'`
+
 ### Batch Processing
 Apply transformations to multiple files using glob patterns.
 `graft "src/**/*.rs" -q '...' -t '...' -i`

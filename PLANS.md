@@ -31,6 +31,13 @@ This document outlines planned features and improvements for `graft`, specifical
     *   Command: `graft --inspect <file> --at-line <line>`
     *   Output: The S-expression of the AST node at the specified line/column. This allows an agent to "see" the structure it needs to match without guessing.
 
+### 3. Batch Queries (Multiple Rewrites) [DONE]
+*   **Goal**: Apply multiple transformations in a single pass.
+*   **Details**:
+    *   Allow multiple `-q` and `-t` flags.
+    *   Apply them sequentially: `Source -> T1 -> Source' -> T2 -> Source''`.
+    *   Example: `graft file.rs -q '(foo)' -t 'bar' -q '(baz)' -t 'qux'`
+
 ### 4. Batch Processing [DONE]
 *   **Goal**: Apply transformations across multiple files efficiently.
 *   **Details**:
@@ -45,7 +52,6 @@ This document outlines planned features and improvements for `graft`, specifical
 
 ## 🛠 Core Improvements
 
-*   **Chained Transformations**: Allow applying multiple query/template pairs in a single pass to avoid parsing overhead.
 *   **Auto-Formatting**: Integrate with language formatters (e.g., `rustfmt`, `prettier`) to clean up the output after structural changes.
 *   **Cross-File Refactoring**: (Ambitious) Support renaming symbols across file boundaries.
 

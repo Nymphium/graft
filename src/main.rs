@@ -15,13 +15,13 @@ struct Cli {
     /// Path to the source file(s) or glob pattern(s)
     files: Vec<String>,
 
-    /// Tree-sitter query
+    /// Tree-sitter query (can be specified multiple times)
     #[arg(short, long)]
-    query: Option<String>,
+    query: Vec<String>,
 
-    /// Replacement template
+    /// Replacement template (can be specified multiple times)
     #[arg(short, long)]
-    template: Option<String>,
+    template: Vec<String>,
 
     /// Edit file in-place (only applicable when files are provided)
     #[arg(short, long)]
@@ -67,12 +67,19 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let query = cli
-        .query
-        .ok_or_else(|| anyhow!("Missing argument: --query <QUERY>"))?;
-    let template = cli
-        .template
-        .ok_or_else(|| anyhow!("Missing argument: --template <TEMPLATE>"))?;
+    if cli.query.is_empty() {
+        return Err(anyhow!("Missing argument: --query <QUERY>"));
+    }
+    if cli.template.is_empty() {
+        return Err(anyhow!("Missing argument: --template <TEMPLATE>"));
+    }
+    if cli.query.len() != cli.template.len() {
+        return Err(anyhow!(
+            "Mismatch between number of queries ({}) and templates ({})",
+            cli.query.len(),
+            cli.template.len()
+        ));
+    }
 
     // Collect all files from arguments (expanding globs)
     let mut file_paths = Vec::new();
@@ -110,34 +117,21 @@ fn main() -> Result<()> {
             )
         })?;
 
-        let result = transformer.apply(&query, &template);
+        let mut all_modifications = Vec::new();
+        for (q, t) in cli.query.iter().zip(cli.template.iter()) {
+            let mut mods = transformer.apply(q, t).with_context(|| "Failed to apply transformation")?;
+            all_modifications.append(&mut mods);
+        }
 
-        match result {
-            Ok(modifications) => {
-                if cli.json {
-                    let output = JsonOutput {
-                        status: "success".to_string(),
-                        modifications: Some(modifications),
-                        error: None,
-                    };
-                    println!("{}", serde_json::to_string_pretty(&output)?);
-                } else {
-                    print!("{}", transformer.get_source());
-                }
-            }
-            Err(e) => {
-                if cli.json {
-                    let output = JsonOutput {
-                        status: "error".to_string(),
-                        modifications: None,
-                        error: Some(format!("{:?}", e)),
-                    };
-                    println!("{}", serde_json::to_string_pretty(&output)?);
-                    std::process::exit(1);
-                } else {
-                    return Err(e).context("Failed to apply transformation");
-                }
-            }
+        if cli.json {
+            let output = JsonOutput {
+                status: "success".to_string(),
+                modifications: Some(all_modifications),
+                error: None,
+            };
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        } else {
+            print!("{}", transformer.get_source());
         }
         return Ok(());
     }
@@ -163,11 +157,15 @@ fn main() -> Result<()> {
                 format!("Failed to initialize transformer for file {:?}", file_path)
             })?;
 
-            let modifications = transformer.apply(&query, &template)?;
+            let mut file_modifications = Vec::new();
+            for (q, t) in cli.query.iter().zip(cli.template.iter()) {
+                let mut mods = transformer.apply(q, t)?;
+                file_modifications.append(&mut mods);
+            }
 
             if cli.json {
                 let mut mods = all_modifications.lock().unwrap();
-                for mut m in modifications {
+                for mut m in file_modifications {
                     m.filename = Some(file_path.to_string_lossy().to_string());
                     mods.push(m);
                 }
@@ -180,10 +178,6 @@ fn main() -> Result<()> {
                     // Avoid interleaved output
                     let mut stdout = io::stdout().lock();
                     use std::io::Write;
-                    // Print filename header if multiple files? Standard grep-like behavior or sed-like?
-                    // Sed concatenates. Let's just print.
-                    // But parallel printing is messy.
-                    // We lock stdout.
                     write!(stdout, "{}", new_source).ok();
                 }
             }
