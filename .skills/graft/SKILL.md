@@ -13,7 +13,7 @@ Perform safe, syntax-aware code transformations on source files. This skill enab
 
 `graft` is a CLI tool. Execute it via `run_shell_command`.
 
-Command: `graft <file> --query <query> --template <template> [--in-place]`
+Command: `graft [file] --query <query> --template <template> [--in-place] [--language <lang>]`
 
 ## How to Construct Queries
 
@@ -41,6 +41,17 @@ Command: `graft <file> --query <query> --template <template> [--in-place]`
     *   `graft src/main.rs -q '...' -t '...' -i`
 4.  **Verify**: Run tests (`cargo test`) or checks (`cargo check`) to ensure valid code.
 
+## Advanced Usage
+
+### Reading from Stdin
+You can pipe code to `graft` by omitting the file argument and specifying the language.
+
+`echo "code" | graft --language <lang> -q '...' -t '...'`
+
+### Listing Languages
+Check supported languages and extensions:
+`graft --list-languages`
+
 ## Examples
 
 ### 1. Rename Function `old(x)` -> `new(x)`
@@ -53,4 +64,5 @@ Command: `graft <file> --query <query> --template <template> [--in-place]`
 
 ### 3. Insert Logging Before Call
 *   **Query**: `(expression_statement (call_expression function: (identifier) @n (#eq? @n "process"))) @target`
-*   **template**: `log("start");\n    process();`
+*   **template**: `log("start");
+    process();`

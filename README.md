@@ -43,10 +43,11 @@ graft <file> --query <query> --template <template> [--in-place]
 
 ### Arguments
 
-*   `<file>`: Path to the source file to transform.
+*   `<file>`: Path to the source file to transform. Optional if reading from stdin (requires `--language`).
 *   `--query, -q`: Tree-sitter S-expression query to match nodes. Use `@target` to specify the node to replace.
 *   `--template, -t`: Replacement string. Use `${capture_name}` for captured nodes.
-*   `--in-place, -i`: Modify the file directly instead of printing to stdout.
+*   `--in-place, -i`: Modify the file directly instead of printing to stdout. Only applicable when a file is provided.
+*   `--language, -l`: Language of the source code. Required if reading from stdin or if extension detection fails.
 *   `--list-languages`: List all supported languages and their file extensions.
 
 ## 💡 Examples
@@ -78,7 +79,35 @@ Insert a log statement before a specific function call.
 ```bash
 graft src/main.rs \
   --query '(expression_statement (call_expression function: (identifier) @name (#eq? @name "process"))) @target' \
-  --template 'log("start");\n    process();'
+  --template 'log("start");\n    process()'
+```
+
+### 4. Read from Stdin
+
+Pipe code directly into graft.
+
+```bash
+echo "fn main() { 1 + 2; }" | graft --language rust \
+  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target' \
+  --template 'add(${l}, ${r})'
+```
+
+## 🤖 Agent Skills
+
+Graft comes with a [Gemini CLI](https://github.com/google/gemini-cli) agent skill that enables your AI assistant to perform structural refactoring safely.
+
+### Installation
+
+To install the skill for your agent:
+
+```bash
+gemini skills install .skills/graft/graft.skill
+```
+
+Then reload your skills in the agent session:
+
+```
+/skills reload
 ```
 
 ## 🌐 Supported Languages
