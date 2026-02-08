@@ -77,7 +77,8 @@ fn main() -> Result<()> {
     // Collect all files from arguments (expanding globs)
     let mut file_paths = Vec::new();
     for pattern in &cli.files {
-        let entries = glob(pattern).with_context(|| format!("Failed to read glob pattern: {}", pattern))?;
+        let entries =
+            glob(pattern).with_context(|| format!("Failed to read glob pattern: {}", pattern))?;
         for entry in entries {
             match entry {
                 Ok(path) => file_paths.push(path),
@@ -89,7 +90,9 @@ fn main() -> Result<()> {
     // If no files provided, read from stdin
     if file_paths.is_empty() {
         if cli.in_place {
-            return Err(anyhow!("--in-place is only supported when files are provided"));
+            return Err(anyhow!(
+                "--in-place is only supported when files are provided"
+            ));
         }
         let lang_name = cli
             .language
@@ -101,7 +104,10 @@ fn main() -> Result<()> {
             .with_context(|| "Failed to read from stdin")?;
 
         let mut transformer = Transformer::new(source, &lang_name).with_context(|| {
-            format!("Failed to initialize transformer for language '{}'", lang_name)
+            format!(
+                "Failed to initialize transformer for language '{}'",
+                lang_name
+            )
         })?;
 
         let result = transformer.apply(&query, &template);
@@ -148,15 +154,14 @@ fn main() -> Result<()> {
             let ext = file_path
                 .extension()
                 .and_then(|e| e.to_str())
-                .ok_or_else(|| {
-                    anyhow!("Could not detect file extension for {:?}", file_path)
-                })?;
+                .ok_or_else(|| anyhow!("Could not detect file extension for {:?}", file_path))?;
 
             // Prefer explicit language if provided, otherwise detect
             let lang_name = cli.language.clone().unwrap_or_else(|| ext.to_string());
 
-            let mut transformer = Transformer::new(source, &lang_name)
-                .with_context(|| format!("Failed to initialize transformer for file {:?}", file_path))?;
+            let mut transformer = Transformer::new(source, &lang_name).with_context(|| {
+                format!("Failed to initialize transformer for file {:?}", file_path)
+            })?;
 
             let modifications = transformer.apply(&query, &template)?;
 
@@ -169,9 +174,8 @@ fn main() -> Result<()> {
             } else {
                 let new_source = transformer.get_source();
                 if cli.in_place {
-                    fs::write(file_path, new_source).with_context(|| {
-                        format!("Failed to write to file: {:?}", file_path)
-                    })?;
+                    fs::write(file_path, new_source)
+                        .with_context(|| format!("Failed to write to file: {:?}", file_path))?;
                 } else {
                     // Avoid interleaved output
                     let mut stdout = io::stdout().lock();
@@ -196,14 +200,22 @@ fn main() -> Result<()> {
     if cli.json {
         let error_occurred = *has_error.lock().unwrap();
         let modifications = all_modifications.lock().unwrap().clone();
-        
+
         let output = JsonOutput {
-            status: if error_occurred { "partial_error".to_string() } else { "success".to_string() },
+            status: if error_occurred {
+                "partial_error".to_string()
+            } else {
+                "success".to_string()
+            },
             modifications: Some(modifications),
-            error: if error_occurred { Some("One or more files failed to process".to_string()) } else { None },
+            error: if error_occurred {
+                Some("One or more files failed to process".to_string())
+            } else {
+                None
+            },
         };
         println!("{}", serde_json::to_string_pretty(&output)?);
-        
+
         if error_occurred {
             std::process::exit(1);
         }
