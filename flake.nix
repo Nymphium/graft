@@ -23,9 +23,30 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-        rustPackages = with pkgs.rust-bin.stable.latest; [
-          default
-          rust-analyzer
+        rustBin = pkgs.rust-bin.stable.latest.default;
+        rustPlatform = pkgs.makeRustPlatform {
+          cargo = rustBin;
+          rustc = rustBin;
+        };
+
+        graft = rustPlatform.buildRustPackage {
+          pname = "graft";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          buildInputs = [ pkgs.tree-sitter ];
+
+          # Tests might need specific environment or might be slow, 
+          # but let's keep them enabled by default.
+          doCheck = true;
+        };
+
+        rustPackages = [
+          rustBin
+          pkgs.rust-bin.stable.latest.rust-analyzer
         ];
 
         formatter = pkgs.nixfmt-tree;
@@ -33,7 +54,6 @@
         devShells.default = pkgs.mkShellNoCC {
           packages = rustPackages ++ [
             pkgs.tree-sitter
-
             pkgs.actionlint
             pkgs.nil
             formatter
@@ -41,6 +61,7 @@
         };
       in
       {
+        packages.default = graft;
         legacyPackages = pkgs;
         inherit formatter devShells;
       }
