@@ -1,5 +1,5 @@
 use super::languages;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use regex::Regex;
 use serde::Serialize;
 use streaming_iterator::StreamingIterator;
@@ -10,6 +10,7 @@ pub struct Transformer {
     parser: Parser,
     tree: Tree,
     language: Language,
+    lang_name: String,
 }
 
 struct Match {
@@ -67,6 +68,7 @@ impl Transformer {
             parser,
             tree,
             language,
+            lang_name: lang_name.to_string(),
         })
     }
 
@@ -74,14 +76,64 @@ impl Transformer {
         &self.source
     }
 
+    /// Validates the template syntax by replacing placeholders with dummy values and parsing.
+    pub fn validate_template(&self, template: &str) -> Result<()> {
+        let template_regex = Regex::new(r"\$\{(\w+)\}").unwrap();
+        // Replace ${label} with a simple identifier 'x' to test syntax
+        let dummy_expanded = template_regex.replace_all(template, "x");
+
+        let mut parser = Parser::new();
+        parser.set_language(&self.language)?;
+
+        // Strategy: try parsing as-is, and then with common wrappers for fragments.
+        let mut try_parse = |code: &str| -> bool {
+            if let Some(tree) = parser.parse(code, None) {
+                !tree.root_node().has_error()
+            } else {
+                false
+            }
+        };
+
+        // 1. Direct parse (works for items, and some languages allow top-level expressions)
+        if try_parse(&dummy_expanded) {
+            return Ok(());
+        }
+
+        // 2. Wrap in a block (covers many statements and expressions)
+        let wrapped_block = format!("{{\n{}\n}}", dummy_expanded);
+        if try_parse(&wrapped_block) {
+            return Ok(());
+        }
+
+        // 3. Wrap in a function (for languages like Go/Java that are strict)
+        let wrapped_fn = match self.lang_name.as_str() {
+            "go" | "golang" | "go.mod" => format!("package p; func _() {{\n{}\n}}", dummy_expanded),
+            "java" => format!("class C {{ void m() {{\n{}\n}} }}", dummy_expanded),
+            "rust" | "rs" => format!("fn _() {{\n{}\n}}", dummy_expanded),
+            _ => format!("func _() {{\n{}\n}}", dummy_expanded),
+        };
+        if try_parse(&wrapped_fn) {
+            return Ok(());
+        }
+
+        Err(anyhow!(
+            "Invalid template syntax for language '{}'.\nTemplate: '{}'\n(Note: Graft checked the template by replacing placeholders with dummy values and it failed to parse.)",
+            self.lang_name,
+            template
+        ))
+    }
+
     pub fn apply(&mut self, query_str: &str, template_str: &str) -> Result<Vec<Modification>> {
+        // Pre-validate template
+        self.validate_template(template_str)?;
+
         let query = Query::new(&self.language, query_str)
             .with_context(|| format!("Failed to parse query: '{}'. Check if the query syntax matches the language grammar.", query_str))?;
 
         let mut cursor = QueryCursor::new();
         let mut matches = Vec::new();
 
-        // 1. Collect all matches first (extracting data to avoid borrow issues)
+        // 1. Collect all matches first
         {
             let mut query_matches =
                 cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
@@ -128,12 +180,6 @@ impl Transformer {
         for m in matches {
             let replacement = self.expand_template(template_str, &m.captures, &template_regex)?;
 
-            // Validation: Check if replacement is a valid subset of the language
-            if let Err(e) = self.validate_template_subset(&replacement) {
-                eprintln!("Warning: Potential syntax error in expanded template: {}", e);
-                eprintln!("Expanded template: '{}'", replacement);
-            }
-
             // Calculate InputEdit
             let start_byte = m.start_byte;
             let old_end_byte = m.end_byte;
@@ -177,15 +223,14 @@ impl Transformer {
             if self.tree.root_node().has_error() {
                 let error_info = self.find_error_context();
                 let error_msg = format!(
-                    "Transformation resulted in syntax error after applying template at byte {}.\n{}",
-                    start_byte,
-                    error_info
+                    "Transformation resulted in syntax error after applying template at byte {}.\nவுகளை {}",
+                    start_byte, error_info
                 );
                 return Err(anyhow!(error_msg));
             }
 
             modifications.push(Modification {
-                filename: None, // To be filled by caller if needed
+                filename: None,
                 start_byte,
                 old_end_byte,
                 new_end_byte,
@@ -210,42 +255,20 @@ impl Transformer {
             if let Some((_, text)) = captures.iter().find(|(n, _)| n == key) {
                 return text.clone();
             }
-            // Warn or error if capture not found? For now keep placeholder.
             format!("${{{}}}", key)
         });
 
         Ok(new_text.to_string())
     }
 
-    /// Validates if the given fragment is a plausible subset of the target language.
-    /// This is a heuristic check to catch obvious syntax errors in the template.
-    fn validate_template_subset(&self, fragment: &str) -> Result<()> {
-        let mut parser = Parser::new();
-        parser.set_language(&self.language)?;
-        let tree = parser
-            .parse(fragment, None)
-            .ok_or_else(|| anyhow!("Failed to parse fragment"))?;
-
-        if tree.root_node().has_error() {
-            // If it has errors, it might still be a valid fragment (e.g. an expression at top level).
-            // But we can check if it's completely unparseable.
-            // For now, we just return an error if has_error() is true, and let the caller decide.
-            return Err(anyhow!("Fragment contains syntax errors according to tree-sitter."));
-        }
-        Ok(())
-    }
-
     /// Finds context around the first syntax error in the current tree.
     fn find_error_context(&self) -> String {
         let mut error_node = None;
-
-        // DFS to find the first error node
         let mut stack = vec![self.tree.root_node()];
         while let Some(node) = stack.pop() {
             if node.has_error() {
                 if node.is_error() || node.is_missing() {
                     error_node = Some(node);
-                    break;
                 }
                 for i in (0..node.child_count()).rev() {
                     stack.push(node.child(i as u32).unwrap());
@@ -254,8 +277,9 @@ impl Transformer {
         }
 
         if let Some(node) = error_node {
-            let start = node.start_byte();
-            let end = node.end_byte();
+            let start = node.start_byte().min(self.source.len());
+            let end = node.end_byte().min(self.source.len()).max(start);
+
             let line_start = self.source[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
             let line_end = self.source[end..]
                 .find('\n')
@@ -265,7 +289,13 @@ impl Transformer {
             let offset = start - line_start;
             let mut pointer = " ".repeat(offset);
             pointer.push('^');
-            format!("Error at {}:{}:\n{}\n{}", node.start_position().row + 1, node.start_position().column + 1, context, pointer)
+            format!(
+                "Error at {}:{}:\n{}\n{}",
+                node.start_position().row + 1,
+                node.start_position().column + 1,
+                context,
+                pointer
+            )
         } else {
             "No specific error location found.".to_string()
         }

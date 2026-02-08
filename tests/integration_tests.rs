@@ -76,10 +76,9 @@ fn test_syntax_error_detection() {
     let result = transformer.apply(query, template);
     assert!(result.is_err());
     let err_msg = format!("{:?}", result.err().unwrap());
-    assert!(err_msg.contains("Transformation resulted in syntax error"));
-    // The error is detected at the semicolon following the incomplete expression
-    assert!(err_msg.contains("Error at 1:22"));
-    assert!(err_msg.contains("^"));
+    // Should be caught by template validation now
+    assert!(err_msg.contains("Invalid template syntax for language 'rust'"));
+    assert!(err_msg.contains("return 1 + ;"));
 }
 
 #[test]
@@ -93,9 +92,23 @@ fn test_multiline_error_context() {
     let result = transformer.apply(query, template);
     assert!(result.is_err());
     let err_msg = format!("{:?}", result.err().unwrap());
-    
-    // In this case, tree-sitter-rust marks the whole function as ERROR
-    assert!(err_msg.contains("Error at 1:1"));
-    assert!(err_msg.contains("fn main() {"));
-    assert!(err_msg.contains("^"));
+
+    // Should be caught by template validation now
+    assert!(err_msg.contains("Invalid template syntax for language 'rust'"));
+    assert!(err_msg.contains("if ( {"));
+}
+
+#[test]
+fn test_go_template_validation() {
+    let source = "1 + 2";
+    let mut transformer = Transformer::new(source.to_string(), "go").unwrap();
+
+    let query = "(binary_expression left: (_) @l operator: \"+\" right: (_) @r) @target";
+    let template = "add(${l} ${r})"; // Missing comma in Go
+
+    let result = transformer.apply(query, template);
+    assert!(result.is_err());
+    let err_msg = format!("{:?}", result.err().unwrap());
+    assert!(err_msg.contains("Invalid template syntax for language 'go'"));
+    assert!(err_msg.contains("add(${l} ${r})"));
 }
