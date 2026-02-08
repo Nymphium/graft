@@ -1,17 +1,19 @@
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
+use glob::glob;
 use graft::Transformer;
 use graft::languages::LANGUAGES;
+use rayon::prelude::*;
+use serde::Serialize;
 use std::fs;
 use std::io::{self, Read};
-use std::path::PathBuf;
-use serde::Serialize;
+use std::sync::{Arc, Mutex};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Path to the source file (optional, defaults to stdin)
-    file: Option<PathBuf>,
+    /// Path to the source file(s) or glob pattern(s)
+    files: Vec<String>,
 
     /// Tree-sitter query
     #[arg(short, long)]
@@ -21,7 +23,7 @@ struct Cli {
     #[arg(short, long)]
     template: Option<String>,
 
-    /// Edit file in-place (only applicable when a file is provided)
+    /// Edit file in-place (only applicable when files are provided)
     #[arg(short, long)]
     in_place: bool,
 
@@ -72,83 +74,141 @@ fn main() -> Result<()> {
         .template
         .ok_or_else(|| anyhow!("Missing argument: --template <TEMPLATE>"))?;
 
-    let (source, lang_name) = match cli.file {
-        Some(ref file_path) => {
-            let source = fs::read_to_string(file_path)
-                .with_context(|| format!("Failed to read file: {:?}", file_path))?;
-
-            let lang = if let Some(l) = cli.language.clone() {
-                l
-            } else {
-                file_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .ok_or_else(|| {
-                        anyhow!("Could not detect file extension. Please specify language with --language")
-                    })?
-                    .to_string()
-            };
-            (source, lang)
-        }
-        None => {
-            if cli.in_place {
-                return Err(anyhow!(
-                    "--in-place is only supported when a file is provided"
-                ));
+    // Collect all files from arguments (expanding globs)
+    let mut file_paths = Vec::new();
+    for pattern in &cli.files {
+        let entries = glob(pattern).with_context(|| format!("Failed to read glob pattern: {}", pattern))?;
+        for entry in entries {
+            match entry {
+                Ok(path) => file_paths.push(path),
+                Err(e) => eprintln!("Warning: failed to read glob entry: {}", e),
             }
-            let lang = cli
-                .language
-                .ok_or_else(|| anyhow!("--language is required when reading from stdin"))?;
-
-            let mut source = String::new();
-            io::stdin()
-                .read_to_string(&mut source)
-                .with_context(|| "Failed to read from stdin")?;
-            (source, lang)
         }
-    };
+    }
 
-    let mut transformer = Transformer::new(source, &lang_name).with_context(|| {
-        format!("Failed to initialize transformer for language '{}'", lang_name)
-    })?;
+    // If no files provided, read from stdin
+    if file_paths.is_empty() {
+        if cli.in_place {
+            return Err(anyhow!("--in-place is only supported when files are provided"));
+        }
+        let lang_name = cli
+            .language
+            .ok_or_else(|| anyhow!("--language is required when reading from stdin"))?;
 
-    let result = transformer.apply(&query, &template);
+        let mut source = String::new();
+        io::stdin()
+            .read_to_string(&mut source)
+            .with_context(|| "Failed to read from stdin")?;
 
-    match result {
-        Ok(modifications) => {
-            if cli.json {
-                let output = JsonOutput {
-                    status: "success".to_string(),
-                    modifications: Some(modifications),
-                    error: None,
-                };
-                println!("{}", serde_json::to_string_pretty(&output)?);
-            } else {
-                let new_source = transformer.get_source();
-                if cli.in_place {
-                    if let Some(file_path) = cli.file {
-                        fs::write(&file_path, new_source).with_context(|| {
-                            format!("Failed to write to file: {:?}", file_path)
-                        })?;
-                    }
+        let mut transformer = Transformer::new(source, &lang_name).with_context(|| {
+            format!("Failed to initialize transformer for language '{}'", lang_name)
+        })?;
+
+        let result = transformer.apply(&query, &template);
+
+        match result {
+            Ok(modifications) => {
+                if cli.json {
+                    let output = JsonOutput {
+                        status: "success".to_string(),
+                        modifications: Some(modifications),
+                        error: None,
+                    };
+                    println!("{}", serde_json::to_string_pretty(&output)?);
                 } else {
-                    print!("{}", new_source);
+                    print!("{}", transformer.get_source());
+                }
+            }
+            Err(e) => {
+                if cli.json {
+                    let output = JsonOutput {
+                        status: "error".to_string(),
+                        modifications: None,
+                        error: Some(format!("{:?}", e)),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&output)?);
+                    std::process::exit(1);
+                } else {
+                    return Err(e).context("Failed to apply transformation");
                 }
             }
         }
-        Err(e) => {
+        return Ok(());
+    }
+
+    // Parallel processing for files
+    let all_modifications = Arc::new(Mutex::new(Vec::new()));
+    let has_error = Arc::new(Mutex::new(false));
+
+    file_paths.par_iter().for_each(|file_path| {
+        let process_file = || -> Result<()> {
+            let source = fs::read_to_string(file_path)
+                .with_context(|| format!("Failed to read file: {:?}", file_path))?;
+
+            let ext = file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .ok_or_else(|| {
+                    anyhow!("Could not detect file extension for {:?}", file_path)
+                })?;
+
+            // Prefer explicit language if provided, otherwise detect
+            let lang_name = cli.language.clone().unwrap_or_else(|| ext.to_string());
+
+            let mut transformer = Transformer::new(source, &lang_name)
+                .with_context(|| format!("Failed to initialize transformer for file {:?}", file_path))?;
+
+            let modifications = transformer.apply(&query, &template)?;
+
             if cli.json {
-                let output = JsonOutput {
-                    status: "error".to_string(),
-                    modifications: None,
-                    error: Some(format!("{:?}", e)),
-                };
-                println!("{}", serde_json::to_string_pretty(&output)?);
-                std::process::exit(1);
+                let mut mods = all_modifications.lock().unwrap();
+                for mut m in modifications {
+                    m.filename = Some(file_path.to_string_lossy().to_string());
+                    mods.push(m);
+                }
             } else {
-                return Err(e).context("Failed to apply transformation");
+                let new_source = transformer.get_source();
+                if cli.in_place {
+                    fs::write(file_path, new_source).with_context(|| {
+                        format!("Failed to write to file: {:?}", file_path)
+                    })?;
+                } else {
+                    // Avoid interleaved output
+                    let mut stdout = io::stdout().lock();
+                    use std::io::Write;
+                    // Print filename header if multiple files? Standard grep-like behavior or sed-like?
+                    // Sed concatenates. Let's just print.
+                    // But parallel printing is messy.
+                    // We lock stdout.
+                    write!(stdout, "{}", new_source).ok();
+                }
             }
+            Ok(())
+        };
+
+        if let Err(e) = process_file() {
+            eprintln!("Error processing {:?}: {:?}", file_path, e);
+            let mut err_flag = has_error.lock().unwrap();
+            *err_flag = true;
         }
+    });
+
+    if cli.json {
+        let error_occurred = *has_error.lock().unwrap();
+        let modifications = all_modifications.lock().unwrap().clone();
+        
+        let output = JsonOutput {
+            status: if error_occurred { "partial_error".to_string() } else { "success".to_string() },
+            modifications: Some(modifications),
+            error: if error_occurred { Some("One or more files failed to process".to_string()) } else { None },
+        };
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        
+        if error_occurred {
+            std::process::exit(1);
+        }
+    } else if *has_error.lock().unwrap() {
+        std::process::exit(1);
     }
 
     Ok(())

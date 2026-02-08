@@ -13,7 +13,7 @@ Perform safe, syntax-aware code transformations on source files. This skill enab
 
 `graft` is a CLI tool. Execute it via `run_shell_command`.
 
-Command: `graft [file] --query <query> --template <template> [--in-place] [--language <lang>] [--json]`
+Command: `graft [files...] --query <query> --template <template> [--in-place] [--language <lang>] [--json]`
 
 ## How to Construct Queries
 
@@ -37,20 +37,23 @@ Command: `graft [file] --query <query> --template <template> [--in-place] [--lan
 1.  **Draft**: Formulate the query and template based on the code structure.
 2.  **Dry Run**: Run `graft` **without** the `--in-place` (or `-i`) flag to verify the transformation in stdout.
     *   `graft src/main.rs -q '...' -t '...'`
-3.  **Apply**: Run with `--in-place` (or `-i`) to modify the file.
+3.  **Apply**: Run with `--in-place` (or `-i`) to modify the file(s).
     *   `graft src/main.rs -q '...' -t '...' -i`
 4.  **Verify**: Run tests (`cargo test`) or checks (`cargo check`) to ensure valid code.
 
 ## Advanced Usage
 
+### Batch Processing
+Apply transformations to multiple files using glob patterns.
+`graft "src/**/*.rs" -q '...' -t '...' -i`
+
 ### Reading from Stdin
 You can pipe code to `graft` by omitting the file argument and specifying the language.
-
 `echo "code" | graft --language <lang> -q '...' -t '...'`
 
-### Listing Languages
-Check supported languages and extensions:
-`graft --list-languages`
+### JSON Output
+Get structured output for programmatic analysis.
+`graft file.rs -q '...' -t '...' --json`
 
 ## Examples
 

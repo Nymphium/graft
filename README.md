@@ -9,6 +9,9 @@
 *   **Bottom-Up Processing**: Preserves offset integrity for multiple replacements in a single file.
 *   **Template Expansion**: Supports flexible template strings with captured variables (e.g., `${name}`).
 *   **Multi-Language Support**: Supports a wide range of languages including Rust, JavaScript, Python, Go, and more.
+*   **Batch Processing**: Apply transformations across multiple files using glob patterns (e.g., `src/**/*.rs`).
+*   **Parallel Execution**: Processes multiple files concurrently for speed.
+*   **Structured Output**: Optional JSON output for integration with other tools and agents.
 *   **Nix-First**: Reproducible development environment with Nix and direnv.
 
 ## 🛠 Prerequisites
@@ -21,9 +24,8 @@
 ### Using Cargo
 
 ```bash
-cargo install --path .
+car go install --path .
 ```
-
 
 <!-- not supported yet
 ### Using Nix
@@ -38,16 +40,17 @@ nix build .
 Basic command structure:
 
 ```bash
-graft <file> --query <query> --template <template> [--in-place]
+graft [files...] --query <query> --template <template> [--in-place]
 ```
 
 ### Arguments
 
-*   `<file>`: Path to the source file to transform. Optional if reading from stdin (requires `--language`).
+*   `[files...]`: Paths to source files or glob patterns (e.g., `src/**/*.rs`). Optional if reading from stdin (requires `--language`).
 *   `--query, -q`: Tree-sitter S-expression query to match nodes. Use `@target` to specify the node to replace.
 *   `--template, -t`: Replacement string. Use `${capture_name}` for captured nodes.
-*   `--in-place, -i`: Modify the file directly instead of printing to stdout. Only applicable when a file is provided.
+*   `--in-place, -i`: Modify the file directly instead of printing to stdout. Only applicable when files are provided.
 *   `--language, -l`: Language of the source code. Required if reading from stdin or if extension detection fails.
+*   `--json`: Output modifications in JSON format.
 *   `--list-languages`: List all supported languages and their file extensions.
 
 ## 💡 Examples
@@ -58,37 +61,28 @@ Rewrite addition operations into function calls.
 
 ```bash
 graft src/main.rs \
-  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target' \
+  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target'
   --template 'add(${l}, ${r})'
 ```
 
-### 2. Rename Function Calls (`foo(x)` → `bar(x)`)
+### 2. Batch Processing
 
-Rename specific function calls while keeping arguments intact.
-
-```bash
-graft src/main.rs \
-  --query '(call_expression function: (identifier) @name (#eq? @name "foo") arguments: (arguments) @args) @target' \
-  --template 'bar${args}'
-```
-
-### 3. Insert Logging Statement
-
-Insert a log statement before a specific function call.
+Apply changes to all Rust files in the `src` directory.
 
 ```bash
-graft src/main.rs \
-  --query '(expression_statement (call_expression function: (identifier) @name (#eq? @name "process"))) @target' \
-  --template 'log("start");\n    process()'
+graft "src/**/*.rs" \
+  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target'
+  --template 'add(${l}, ${r})' \
+  --in-place
 ```
 
-### 4. Read from Stdin
+### 3. Read from Stdin
 
 Pipe code directly into graft.
 
 ```bash
 echo "fn main() { 1 + 2; }" | graft --language rust \
-  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target' \
+  --query '(binary_expression left: (_) @l operator: "+" right: (_) @r) @target'
   --template 'add(${l}, ${r})'
 ```
 

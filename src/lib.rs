@@ -23,6 +23,8 @@ struct Match {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct Modification {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
     pub start_byte: usize,
     pub old_end_byte: usize,
     pub new_end_byte: usize,
@@ -176,6 +178,7 @@ impl Transformer {
             }
 
             modifications.push(Modification {
+                filename: None, // To be filled by caller if needed
                 start_byte,
                 old_end_byte,
                 new_end_byte,
@@ -200,6 +203,7 @@ impl Transformer {
             if let Some((_, text)) = captures.iter().find(|(n, _)| n == key) {
                 return text.clone();
             }
+            // Warn or error if capture not found? For now keep placeholder.
             format!("${{{}}}", key)
         });
 

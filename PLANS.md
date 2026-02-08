@@ -31,7 +31,7 @@ This document outlines planned features and improvements for `graft`, specifical
     *   Command: `graft --inspect <file> --at-line <line>`
     *   Output: The S-expression of the AST node at the specified line/column. This allows an agent to "see" the structure it needs to match without guessing.
 
-### 4. Batch Processing
+### 4. Batch Processing [DONE]
 *   **Goal**: Apply transformations across multiple files efficiently.
 *   **Details**:
     *   Support glob patterns: `graft "src/**/*.rs" ...`
