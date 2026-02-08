@@ -3,6 +3,8 @@ use regex::Regex;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, Tree, Language};
 
+pub mod languages;
+
 pub struct Transformer {
     source: String,
     parser: Parser,
@@ -20,21 +22,17 @@ struct Match {
 
 impl Transformer {
     pub fn new(source: String, lang_name: &str) -> Result<Self> {
-        let language = match lang_name {
-            "rust" | "rs" => tree_sitter_rust::LANGUAGE.into(),
-            "javascript" | "js" => tree_sitter_javascript::LANGUAGE.into(),
-            "go" => tree_sitter_go::LANGUAGE.into(),
-            _ => return Err(anyhow!("Unsupported language: {}", lang_name)),
-        };
+        let language = languages::get_language(lang_name)?;
 
         let mut parser = Parser::new();
         parser
             .set_language(&language)
-            .context("Error loading language")?;
+            .context("Error loading language into parser")?;
         
+        // Ensure parsing works
         let tree = parser
             .parse(&source, None)
-            .ok_or_else(|| anyhow!("Failed to parse source"))?;
+            .ok_or_else(|| anyhow!("Failed to parse source. This might be due to an invalid language configuration or an internal parser error."))?;
 
         Ok(Self {
             source,
@@ -50,7 +48,7 @@ impl Transformer {
 
     pub fn apply(&mut self, query_str: &str, template_str: &str) -> Result<()> {
         let query = Query::new(&self.language, query_str)
-            .context("Failed to parse query")?;
+            .with_context(|| format!("Failed to parse query: '{}'. Check if the query syntax matches the language grammar.", query_str))?;
         
         let mut cursor = QueryCursor::new();
         let mut matches = Vec::new();
@@ -83,6 +81,11 @@ impl Transformer {
                     });
                 }
             }
+        }
+
+        if matches.is_empty() {
+             // Not an error, just no op
+             return Ok(());
         }
 
         // 2. Sort matches by start byte descending (Bottom-Up)
@@ -126,12 +129,19 @@ impl Transformer {
             if let Some(t) = new_tree {
                 self.tree = t;
             } else {
-                return Err(anyhow!("Failed to re-parse after edit"));
+                return Err(anyhow!("Failed to re-parse after edit at byte {}. The parser state might be corrupted.", start_byte));
             }
 
             // Validation
             if self.tree.root_node().has_error() {
-                return Err(anyhow!("Transformation resulted in syntax error at {}", start_byte));
+                // We should probably print where the error is
+                let error_msg = format!("Transformation resulted in syntax error after applying template at byte {}.", start_byte);
+                
+                // Try to find error node
+                // (This is a simple traversal, might be slow for huge trees, but acceptable for error reporting)
+                // Actually `has_error()` checks recursively.
+                // We won't traverse now, just report.
+                return Err(anyhow!(error_msg));
             }
         }
 
@@ -144,6 +154,7 @@ impl Transformer {
             if let Some((_, text)) = captures.iter().find(|(n, _)| n == key) {
                 return text.clone();
             }
+            // Warn or error if capture not found? For now keep placeholder.
             format!("${{{}}}", key) 
         });
 
