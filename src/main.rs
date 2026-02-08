@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use glob::glob;
-use graft::Transformer;
 use graft::languages::LANGUAGES;
 use graft::rules::RuleFile;
+use graft::Transformer;
 use rayon::prelude::*;
 use serde::Serialize;
 use std::fs;
@@ -12,36 +12,47 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    author,
+    version,
+    about,
+    long_about = "Graft is a safe, structural code transformation tool. It uses Tree-sitter to parse source code into an AST, allowing you to rewrite code based on its structure rather than fragile regex patterns.\n\nExamples:\n  # Rewrite binary expressions (a + b -> add(a, b))\n  graft src/main.rs -q \'(binary_expression left: (_) @l operator: \"+\" right: (_) @r) @target\' -t \'add(${l}, ${r})\'
+
+  # Rename function calls across multiple files\n  graft \"src/**/*.rs\" -q \'(call_expression function: (identifier) @n (#eq? @n \"old\")) @target\' -t \'new\' -i
+
+  # Use a rule file for complex transformations\n  graft src/ -f rules.toml -i"
+)]
 struct Cli {
-    /// Path to the source file(s) or glob pattern(s)
+    /// Path to the source file(s) or glob pattern(s). Optional if reading from stdin.
     files: Vec<String>,
 
-    /// Tree-sitter query (can be specified multiple times)
-    #[arg(short, long)]
+    /// Tree-sitter query (S-expression). Capture the node to replace with `@target`.
+    /// Can be specified multiple times for sequential transformations.
+    #[arg(short, long, value_name = "QUERY")]
     query: Vec<String>,
 
-    /// Replacement template (can be specified multiple times)
-    #[arg(short, long)]
+    /// Replacement template. Use `${capture_name}` to insert matched nodes.
+    /// Must match the number of queries provided.
+    #[arg(short, long, value_name = "TEMPLATE")]
     template: Vec<String>,
 
-    /// Path to a TOML rule file
-    #[arg(short = 'f', long)]
+    /// Path to a TOML rule file containing multiple queries and templates.
+    #[arg(short = 'f', long, value_name = "FILE")]
     rule_file: Option<PathBuf>,
 
-    /// Edit file in-place (only applicable when files are provided)
+    /// Edit file(s) in-place instead of printing to stdout.
     #[arg(short, long)]
     in_place: bool,
 
-    /// Language of the source code (required if reading from stdin)
-    #[arg(short, long)]
+    /// Language of the source code. Required if reading from stdin or if extension detection fails.
+    #[arg(short, long, value_name = "LANG")]
     language: Option<String>,
 
-    /// List supported languages and exit
+    /// List all supported languages and their file extensions.
     #[arg(long)]
     list_languages: bool,
 
-    /// Output modifications in JSON format
+    /// Output detailed modification metadata in JSON format.
     #[arg(long)]
     json: bool,
 }
@@ -94,7 +105,7 @@ fn main() -> Result<()> {
             let exts_str = lang
                 .extensions
                 .iter()
-                .map(|s| format!("`.{}`", s))
+                .map(|s| format!("`{}`", s))
                 .collect::<Vec<_>>()
                 .join(", ");
             println!("| {} | {} |", lang.name, exts_str);
@@ -111,7 +122,7 @@ fn main() -> Result<()> {
     // If no rule file and no CLI query, error out (unless listing languages)
     if rule_file.is_none() && cli.query.is_empty() {
         return Err(anyhow!(
-            "Either --rule-file or --query/--template must be provided"
+            "Either --rule-file or --query/--template must be provided. Use --help for more information."
         ));
     }
 

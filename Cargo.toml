@@ -2,6 +2,7 @@
 name = "graft"
 version = "0.1.0"
 edition = "2024"
+description = "A structural code transformer powered by Tree-sitter"
 
 [dependencies]
 anyhow = "1.0.101"
