@@ -1,5 +1,5 @@
 use anyhow::Result;
-use graft::Transformer;
+use graft::graft::Transformer;
 
 #[test]
 fn test_binary_expression_rewrite() -> Result<()> {
